@@ -174,14 +174,13 @@ namespace com.github.alexyz.robolink {
             if (SOURCES.Count < 2) {
                 throw new Exception("require at least one source and one dest");
             }
+            DEST = SOURCES[SOURCES.Count - 1];
+            SOURCES.RemoveAt(SOURCES.Count - 1);
             foreach (string p in SOURCES) {
                 if (!Directory.Exists(p)) {
                     throw new Exception("source or destination doesn't exist: " + p);
                 }
             }
-            DEST = SOURCES[SOURCES.Count - 1];
-            SOURCES.RemoveAt(SOURCES.Count - 1);
-
             Console.WriteLine("recurse={0} purge={1} flatten={2} commit={3} quiet={4}", RECURSE, PURGE, FLATTEN, COMMIT, QUIET);
             Console.WriteLine("if={0} id={1} xf={2} xd={3} sources={4} dest={5}", INCLUDE_FILES.Count, INCLUDE_DIRS.Count, EXCLUDE_FILES.Count, EXCLUDE_DIRS.Count, SOURCES.Count, DEST);
 
