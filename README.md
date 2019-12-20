@@ -29,9 +29,8 @@ Synchronise D:\src with D:\dest
 	robolink.exe /c /r /p D:\src D:\dest
 
 Collect client or shared jar files into a single directory excluding those ending in -server.jar.
-This is useful for launching the [NextGen Connect](https://www.nextgen.com/products-and-services/integration-engine) client from the command line.
 
-	robolink.exe /c /p /r /f /q /if *.jar /xf *-server.jar client-lib extensions %temp%\mirth
+	robolink.exe /c /p /r /f /q /if *.jar /xf *-server.jar client-lib extensions out
 
 ## Download
 
