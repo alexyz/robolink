@@ -30,4 +30,8 @@ Synchronise D:\src with D:\dest
 
 ## Download
 
-[EXE file](https://www.dropbox.com/s/cw8982ldb274s2k/robolink.exe?dl=0)
+See GitHub releases!
+
+You will probably get a warning from SmartScreen that the program is untrusted.
+
+You can either trust the program, or read the source and compile it yourself.
