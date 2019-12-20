@@ -8,50 +8,62 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace com.github.alexyz.robolink {
-
-    class Program {
-        static List<string> SOURCES = new List<string>();
-        static bool RECURSE, PURGE, FLATTEN, COMMIT, QUIET;
-        static List<Regex> INCLUDE_FILES = new List<Regex>(), INCLUDE_DIRS = new List<Regex>(), EXCLUDE_FILES = new List<Regex>(), EXCLUDE_DIRS = new List<Regex>();
-        static string DEST;
-        static Dictionary<string, string> SOURCE_MAP = new Dictionary<string, string>();
-        static Dictionary<string, string> DEST_MAP = new Dictionary<string, string>();
+    
+    public class Program {
+        private readonly List<string> sources = new List<string>();
+        private readonly List<RS> includeFiles = new List<RS>();
+        private readonly List<RS> includeDirs = new List<RS>();
+        private readonly List<RS> excludeFiles = new List<RS>();
+        private readonly List<RS> excludeDirs = new List<RS>();
+        private readonly Dictionary<string, string> sourceMap = new Dictionary<string, string>();
+        private readonly Dictionary<string, string> destMap = new Dictionary<string, string>();
+        private bool recurse, purge, flatten, commit, quiet, verbose;
+        private string destination;
+        int created, deleted;
 
         static void Main (string[] args) {
-            // source1\* -> dest\*
             try {
-                GetArgs(args);
-                foreach (string s in SOURCES) {
-                    Find(s, "\\");
-                }
-                if (PURGE) {
-                    // recurse dest
-                    // if dest file is older or missing, remove
-                    Purge(DEST);
-                }
-                Create();
+                // source1\* -> dest\*
+                Program p = new Program();
+                p.Run(args);
             } catch (Exception e) {
-                Console.WriteLine("exception: " + e.ToString());
+                Console.WriteLine(e.ToString());
                 Environment.Exit(1);
             }
         }
 
-        static void Create () {
-            Console.WriteLine("create");
-            foreach (string sp in SOURCE_MAP.Keys) {
-                string dp = SOURCE_MAP[sp];
+        private void Run (string[] args) {
+            GetArgs(args);
+            foreach (string s in sources) {
+                Find(s, "\\");
+            }
+            if (purge) {
+                // recurse dest
+                // if dest file is older or missing, remove
+                Purge(destination);
+            }
+            Create();
+            Console.WriteLine("Created = {0} Deleted = {1}", created, deleted);
+        }
+
+        private void Create () {
+            //Console.WriteLine("create");
+            foreach (string sp in sourceMap.Keys) {
+                string dp = sourceMap[sp];
                 string parent = Path.GetDirectoryName(dp);
                 if (!Directory.Exists(parent)) {
-                    Console.WriteLine("  mkdir " + parent);
-                    if (COMMIT) {
+                    if (commit) {
                         Directory.CreateDirectory(parent);
                     }
                 }
                 if (!File.Exists(dp)) {
-                    Console.WriteLine("  mklink " + sp + " => " + dp);
-                    if (COMMIT && !CreateHardLink(dp, sp, IntPtr.Zero)) {
+                    if (verbose) {
+                        Console.WriteLine("mklink {0} = {1}", dp, sp);
+                    }
+                    if (commit && !CreateHardLink(dp, sp, IntPtr.Zero)) {
                         throw new Exception("could not create hardlink " + sp + " => " + dp);
                     }
+                    created++;
                 }
             }
         }
@@ -59,14 +71,14 @@ namespace com.github.alexyz.robolink {
         [DllImport("Kernel32.dll", CharSet = CharSet.Unicode)]
         static extern bool CreateHardLink (string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
 
-        static void Purge (string destdir) {
-            Console.WriteLine("purge {0}", destdir);
-            if (RECURSE) {
+        private void Purge (string destdir) {
+            //Console.WriteLine("purge {0}", destdir);
+            if (recurse) {
                 foreach (string dp in Directory.EnumerateDirectories(destdir)) {
-                    Console.WriteLine("  purge dir dp={0}", dp);
+                    //Console.WriteLine("  purge dir dp={0}", dp);
                     string dpname = Path.GetFileName(dp);
                     string dpnamelower = dpname.ToLower();
-                    if (Matches(INCLUDE_DIRS, dpnamelower, true) && !Matches(EXCLUDE_DIRS, dpnamelower, false)) {
+                    if (Matches(includeDirs, dpnamelower, true) && !Matches(excludeDirs, dpnamelower, false)) {
                         Purge(dp);
                     }
                 }
@@ -75,10 +87,10 @@ namespace com.github.alexyz.robolink {
                 string dplower = dp.ToLower();
                 string dpname = Path.GetFileName(dp);
                 string dpnamelower = dpname.ToLower();
-                Console.WriteLine("  purge file dp={0}", dp);
-                if (Matches(INCLUDE_FILES, dpnamelower, true) && !Matches(EXCLUDE_FILES, dpnamelower, false)) {
+                //Console.WriteLine("  purge file dp={0}", dp);
+                if (Matches(includeFiles, dpnamelower, true) && !Matches(excludeFiles, dpnamelower, false)) {
                     bool del = false;
-                    if (DEST_MAP.TryGetValue(dplower, out string sp)) {
+                    if (destMap.TryGetValue(dplower, out string sp)) {
                         DateTime dt = File.GetLastWriteTime(dp);
                         DateTime st = File.GetLastWriteTime(sp);
                         if (st > dt) {
@@ -88,51 +100,101 @@ namespace com.github.alexyz.robolink {
                         del = true;
                     }
                     if (del) {
-                        Console.WriteLine("delete " + dp);
-                        if (COMMIT) {
+                        if (verbose) {
+                            Console.WriteLine("del " + dp);
+                        }
+                        if (commit) {
                             File.Delete(dp);
                         }
+                        deleted++;
                     }
                 }
             }
         }
 
-        static void Find (string sourcedir, string subdir) {
-            Console.WriteLine("find sourcedir={0} subdir={1}", sourcedir, subdir);
-            if (RECURSE) {
+        private void Find (string sourcedir, string subdir) {
+            //Console.WriteLine("find sourcedir={0} subdir={1}", sourcedir, subdir);
+
+            if (recurse) {
                 foreach (string sp in Directory.EnumerateDirectories(sourcedir + subdir)) {
-                    Console.WriteLine("  find dir={0}", sp);
+                    //Console.WriteLine("  find dir={0}", sp);
                     string spname = Path.GetFileName(sp);
                     string spnamelower = spname.ToLower();
-                    if (Matches(INCLUDE_DIRS, spnamelower, true) && !Matches(EXCLUDE_DIRS, spnamelower, false)) {
+                    if (Matches(includeDirs, spnamelower, true) && !Matches(excludeDirs, spnamelower, false)) {
                         Find(sourcedir, subdir + spname + "\\");
                     }
                 }
             }
+
             foreach (string sp in Directory.EnumerateFiles(sourcedir + subdir)) {
                 string splower = sp.ToLower();
                 string spname = Path.GetFileName(sp);
                 string spnamelower = spname.ToLower();
-                string dp = DEST + (FLATTEN ? "\\" : subdir) + spname;
+                string dp = destination + (flatten ? "\\" : subdir) + spname;
                 string dplower = dp.ToLower();
-                Console.WriteLine("  find file sp={0} dp={1}", sp, dp);
-                if (Matches(INCLUDE_FILES, spnamelower, true) && !Matches(EXCLUDE_FILES, spnamelower, false)) {
-                    if (!QUIET && DEST_MAP.ContainsKey(dplower)) {
-                        throw new Exception("multiple destination mappings for " + dp + " (first is " + DEST_MAP[dp] + " second is " + sp + ")");
+                //Console.WriteLine("  sp={0}", sp, dp);
+                //Console.WriteLine("  dp={0}", dp);
+
+                if (Matches(includeFiles, spnamelower, true) && !Matches(excludeFiles, spnamelower, false)) {
+                    if (destMap.ContainsKey(dplower)) {
+                        string exdp = destMap[dplower];
+                        if (FileEqual(exdp, sp)) {
+                            Console.WriteLine("ignoring identical source files for {0}", dp);
+                        } else if (quiet) {
+                            Console.WriteLine("ignoring different source files for {0}\n  current: {1}\n  ignored: {2}", dp, exdp, sp);
+                        } else {
+                            throw new Exception(String.Format("multiple source files for {0} (first is {1} second is {2})", dp, exdp, sp));
+                        }
+                    } else {
+                        sourceMap[splower] = dp;
+                        destMap[dplower] = sp;
                     }
-                    SOURCE_MAP[splower] = dp;
-                    DEST_MAP[dplower] = sp;
                 }
             }
         }
 
+        private static bool FileEqual (string f1, string f2) {
+            FileInfo i1 = new FileInfo(f1);
+            FileInfo i2 = new FileInfo(f2);
+            if (i1.Length != i2.Length) {
+                //Console.WriteLine("different length");
+                return false;
+            } else {
+                byte[] a1 = new byte[4096];
+                byte[] a2 = new byte[4096];
+                using (FileStream s1 = File.OpenRead(f1)) {
+                    using (FileStream s2 = File.OpenRead(f2)) {
+                        while (true) {
+                            int b1 = s1.Read(a1, 0, a1.Length);
+                            int b2 = s2.Read(a2, 0, a2.Length);
+                            if (b1 == 0 && b2 == 0) {
+                                // end of file
+                                break;
+                            } else if (b1 != b2 || !ArrayEqual(a1, a2)) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+        }
 
-        static bool Matches (List<Regex> list, string name, bool matchempty) {
+        private static bool ArrayEqual (byte[] a1, byte[] a2) {
+            for (int n = 0; n < a1.Length; n++) {
+                if (a1[n] != a2[n]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool Matches (List<RS> list, string name, bool matchempty) {
             if (list.Count == 0) {
                 return matchempty;
             } else {
-                foreach (Regex r in list) {
-                    if (r.IsMatch(name)) {
+                foreach (RS r in list) {
+                    if (r.regex.IsMatch(name)) {
                         return true;
                     }
                 }
@@ -140,55 +202,71 @@ namespace com.github.alexyz.robolink {
             }
         }
 
-        static void GetArgs (string[] args) {
+        private void GetArgs (string[] args) {
             for (int n = 0; n < args.Length; n++) {
                 string a = args[n].ToUpper();
-                List<Regex> l = null;
+                List<RS> l = null;
                 switch (a) {
-                    case "/R": RECURSE = true; break;
-                    case "/P": PURGE = true; break;
-                    case "/F": FLATTEN = true; break;
-                    case "/C": COMMIT = true; break;
-                    case "/Q": QUIET = true; break;
-                    case "/XF": l = EXCLUDE_FILES; break;
-                    case "/XD": l = EXCLUDE_DIRS; break;
-                    case "/IF": l = INCLUDE_FILES; break;
-                    case "/ID": l = INCLUDE_DIRS; break;
+                    case "/R": recurse = true; break;
+                    case "/P": purge = true; break;
+                    case "/F": flatten = true; break;
+                    case "/C": commit = true; break;
+                    case "/Q": quiet = true; break;
+                    case "/XF": l = excludeFiles; break;
+                    case "/XD": l = excludeDirs; break;
+                    case "/IF": l = includeFiles; break;
+                    case "/ID": l = includeDirs; break;
+                    case "/V": verbose = true; break;
                     case "/?": Usage(); break;
                     default:
                         if (a.StartsWith("/")) {
                             throw new Exception("unrecognised command " + a);
                         } else {
-                            SOURCES.Add(args[n]);
+                            sources.Add(args[n]);
                         }
                         break;
                 }
                 if (l != null) {
                     if (n < args.Length + 1 && !args[n + 1].StartsWith("/")) {
-                        l.Add(ToRegex(args[++n].ToLower()));
+                        l.Add(new RS(args[++n].ToLower()));
                     } else {
                         throw new Exception("XF/XD/IF/ID without arg");
                     }
                 }
             }
-            if (SOURCES.Count < 2) {
+            if (sources.Count < 2) {
                 throw new Exception("require at least one source and one dest");
             }
-            foreach (string p in SOURCES) {
+            destination = sources[sources.Count - 1];
+            sources.RemoveAt(sources.Count - 1);
+            foreach (string p in sources) {
                 if (!Directory.Exists(p)) {
                     throw new Exception("source or destination doesn't exist: " + p);
                 }
             }
-            DEST = SOURCES[SOURCES.Count - 1];
-            SOURCES.RemoveAt(SOURCES.Count - 1);
-
-            Console.WriteLine("recurse={0} purge={1} flatten={2} commit={3} quiet={4}", RECURSE, PURGE, FLATTEN, COMMIT, QUIET);
-            Console.WriteLine("if={0} id={1} xf={2} xd={3} sources={4} dest={5}", INCLUDE_FILES.Count, INCLUDE_DIRS.Count, EXCLUDE_FILES.Count, EXCLUDE_DIRS.Count, SOURCES.Count, DEST);
-
+            Console.WriteLine("recurse = {0} purge = {1} flatten = {2} commit = {3} quiet = {4}", recurse, purge, flatten, commit, quiet);
+            foreach (string dir in sources) {
+                Console.WriteLine("source = {0}", dir);
+            }
+            Console.WriteLine("dest = {0}", destination);
+            foreach (RS r in includeFiles) {
+                Console.WriteLine("include file = {0}", r.str);
+            }
+            foreach (RS r in includeDirs) {
+                Console.WriteLine("include dir = {0}", r.str);
+            }
+            foreach (RS r in excludeFiles) {
+                Console.WriteLine("exclude file = {0}", r.str);
+            }
+            foreach (RS r in excludeDirs) {
+                Console.WriteLine("exclude dir = {0}", r.str);
+            }
         }
 
         static void Usage () {
-            Console.WriteLine("usage: robolink.exe source1 [source2] dest [opts]");
+            Console.WriteLine("RoboLink - Program to mass create NTFS hard links");
+            Console.WriteLine("  https://github.com/alexyz/robolink");
+            Console.WriteLine("Usage: robolink.exe source1 [source2...n] dest [opts]");
             Console.WriteLine("  /R - recurse into subdirectories of sources and destination");
             Console.WriteLine("  /P - purge files from destination missing or newer in sources");
             Console.WriteLine("  /F - flatten subdirectories of sources");
@@ -202,7 +280,7 @@ namespace com.github.alexyz.robolink {
             Environment.Exit(0);
         }
 
-        static Regex ToRegex (string p) {
+        public static Regex ToRegex (string p) {
             StringBuilder sb = new StringBuilder();
             for (int n = 0; n < p.Length; n++) {
                 char c = p[n];
@@ -218,5 +296,12 @@ namespace com.github.alexyz.robolink {
         }
     }
 
-
+    public class RS {
+        public readonly Regex regex;
+        public readonly string str;
+        public RS (string str) {
+            this.regex = Program.ToRegex(str);
+            this.str = str;
+        }
+    }
 }
